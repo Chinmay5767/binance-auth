@@ -60,84 +60,8 @@ public class KeycloakAuthService {
     private final AuthenticationManager authenticationManager;
     private final TokenService tokenService;
 
-    // ✅ Authenticate user with Keycloak OIDC
-    public Map<String, Object> authenticateUser(String username, String password, String deviceId) {
-        log.info("Authenticating user with Keycloak: {}", username);
-        
-        try {
-            // 1. Get tokens from Keycloak
-            Map<String, Object> keycloakTokens = getKeycloakTokens(username, password);
-            
-            // 2. Extract user info from ID token
-            Map<String, Object> userInfo = getUserInfoFromKeycloak(
-                keycloakTokens.get("access_token").toString()
-            );
-            
-            // 3. Store/Update user in local database
-            AuthUserEntity user = syncUserWithKeycloak(userInfo);
-            
-            // ✅ 4. Generate application tokens - FIXED: using overloaded methods
-            String accessToken = tokenService.generateAccessToken(user, deviceId);
-            String refreshToken = tokenService.generateRefreshToken(user, deviceId);
-            
-            // 5. Build response
-            Map<String, Object> response = new HashMap<>();
-            response.put("access_token", accessToken);
-            response.put("refresh_token", refreshToken);
-            response.put("token_type", "Bearer");
-            response.put("expires_in", 900); // 15 minutes
-            response.put("id_token", keycloakTokens.get("id_token"));
-            response.put("user", Map.of(
-                "id", user.getUserId(),
-                "username", user.getUsername(),
-                "email", user.getEmailId(),
-                "roles", user.getRoles()
-            ));
-            
-            log.info("Authentication successful for user: {}", username);
-            return response;
-            
-        } catch (HttpClientErrorException e) {
-            log.error("Keycloak authentication failed: {}", e.getMessage());
-            throw new RuntimeException("Invalid credentials");
-        } catch (Exception e) {
-            log.error("Authentication error: {}", e.getMessage(), e);
-            throw new RuntimeException("Authentication failed");
-        }
-    }
-
-    // ✅ Get tokens from Keycloak using Password Grant
-    private Map<String, Object> getKeycloakTokens(String username, String password) {
-        String tokenUrl = issuerUri + "/protocol/openid-connect/token";
-        
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        
-        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-        params.add("client_id", clientId);
-        params.add("client_secret", clientSecret);
-        params.add("grant_type", "password");
-        params.add("username", username);
-        params.add("password", password);
-        params.add("scope", "openid profile email offline_access");
-        
-        HttpEntity<MultiValueMap<String, String>> request = 
-            new HttpEntity<>(params, headers);
-        
-        try {
-            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-                tokenUrl,
-                HttpMethod.POST,
-                request,
-                new ParameterizedTypeReference<Map<String, Object>>() {}
-            );
-            
-            return response.getBody();
-        } catch (HttpClientErrorException e) {
-            log.error("Keycloak token error: {}", e.getMessage());
-            throw new RuntimeException("Failed to get tokens from Keycloak");
-        }
-    }
+    // Interactive user sign-in is handled by Spring Security OAuth2 Login
+    // (Authorization Code grant). This service must not collect user passwords.
 
     // ✅ Get user info from Keycloak
     private Map<String, Object> getUserInfoFromKeycloak(String accessToken) {
