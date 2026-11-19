@@ -21,6 +21,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.GrantedAuthority;
 import java.util.Collection;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -117,7 +118,7 @@ public class SecurityConfig {
             Object rolesClaim = realmAccess.get("roles");
             if (!(rolesClaim instanceof Collection<?> roles)) return List.of();
             return roles.stream().filter(String.class::isInstance).map(String.class::cast)
-                    .map(role -> new SimpleGrantedAuthority(role.startsWith("ROLE_") ? role : "ROLE_" + role))
+                    .map(role -> (GrantedAuthority) new SimpleGrantedAuthority(role.startsWith("ROLE_") ? role : "ROLE_" + role))
                     .collect(Collectors.toList());
         });
         return converter;
