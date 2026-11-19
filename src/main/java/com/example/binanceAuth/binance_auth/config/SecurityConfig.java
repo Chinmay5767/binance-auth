@@ -19,6 +19,11 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import java.util.Collection;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -44,7 +49,7 @@ public class SecurityConfig {
     @Order(1)
     public SecurityFilterChain oauth2LoginSecurityFilterChain (HttpSecurity http) throws Exception {
         http
-            .securityMatcher("/oauth2/**", "/login/**", "/logout")
+            .securityMatcher("/oauth2/**", "/login/**", "/logout", "/auth/success", "/auth/error")
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
                 .anyRequest().permitAll()
@@ -83,11 +88,10 @@ public class SecurityConfig {
                 ).hasRole("USER")                
                 .requestMatchers(
                         "/auth/health",
-                        "/auth/success",
-                        "/auth/error",
-                        "/auth/public/**",
+                        "/auth/register",
                         "/actuator/health"
-                    ).hasRole("ADMIN")
+                    ).permitAll()
+                .requestMatchers("/auth/public/**").permitAll()
                 // ✅ Protected endpoints
                 .anyRequest().authenticated()
             )
@@ -97,7 +101,8 @@ public class SecurityConfig {
                 )
             )
             .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            // Reads JwtAuthenticationToken, so run after bearer authentication.
+            .addFilterAfter(jwtAuthenticationFilter, BearerTokenAuthenticationFilter.class);
 
         return http.build();
     }
@@ -105,13 +110,17 @@ public class SecurityConfig {
     @Bean
     // this function will convert the JWT token's authorities (which will be in json format) to Spring Security's GrantedAuthority format
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
-        grantedAuthoritiesConverter.setAuthorityPrefix("ROLE_");
-        
-        JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
-        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
-        
-        return jwtAuthenticationConverter;
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            Object realmAccessClaim = jwt.getClaims().get("realm_access");
+            if (!(realmAccessClaim instanceof Map<?, ?> realmAccess)) return List.of();
+            Object rolesClaim = realmAccess.get("roles");
+            if (!(rolesClaim instanceof Collection<?> roles)) return List.of();
+            return roles.stream().filter(String.class::isInstance).map(String.class::cast)
+                    .map(role -> new SimpleGrantedAuthority(role.startsWith("ROLE_") ? role : "ROLE_" + role))
+                    .collect(Collectors.toList());
+        });
+        return converter;
     }
 
     @Bean
